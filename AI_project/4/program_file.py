@@ -6,7 +6,48 @@ from nn import MLP, Value
 def normalize_input(X):
     means = np.mean(X, axis=0)
     stds = np.std(X, axis=0)
-    return (X - means) / stds 
+    return (X - means) / stds
+    
+def train(model, X, y, iterations, learning_rate, grad_accumulations):
+    rows = list(zip(X, y))
+    random.shuffle(rows)
+    split = int(0.9 * len(rows))
+    train_rows = rows[:split]
+    test_rows = rows[split:]
+
+    for i in range(iterations):
+        for k in range(grad_accumulations):
+            # Select a random training example
+            sample = train_rows[i % len(train_rows)]
+            x = sample[0]
+            y_label = sample[1]
+            # Forward pass
+            input_vec = [Value(xi) for xi in x]
+            y_pred = model(input_vec)
+            # Compute probabilities
+            probs = Value.softmax(y_pred)
+            # Compute cross-entropy loss
+            loss = -1 * probs[y_label].log() / float(grad_accumulations)
+
+            # Backward pass
+            model.zero_grad()
+            loss.backward()
+            # Update weights - SGD (Stochastic Gradient Descent)
+            for param in model.parameters():
+                param.data -= learning_rate * param.grad
+        
+        if i % 1000 == 0:
+            print(f'Iteration {i}, Loss: {loss.data}')
+
+def evaluate(model, X, y):
+    correct = 0
+    for input_vec, target in zip(X, y):
+        output = Value.softmax(model([Value(x) for x in input_vec]))
+        predicted = max(range(len(output)), key=lambda i: output[i].data)
+        if predicted == target:
+            correct += 1
+    accuracy = correct / len(X)
+    print(f"Accuracy: {accuracy:.4f}")
 
 # Load and preprocess the data
 with open('wine.csv', 'r') as file:
@@ -41,35 +82,5 @@ lr = 0.001
 grad_accumulations = 10 #2500
 
 # Train and evaluate the model
-for i in range(iterations):
-    for k in range(grad_accumulations):
-        # Select a random training example
-        sample = train_rows[i % len(train_rows)]
-        x = sample[0]
-        y_label = sample[1]
-        # Forward pass
-        input_vec = [Value(xi) for xi in x.tolist()]
-        y_pred = model(input_vec)
-        # Compute probabilities
-        probs = Value.softmax(y_pred)
-        # Compute cross-entropy loss
-        loss = -1 * probs[y_label].log() / float(grad_accumulations)
-
-        # Backward pass
-        model.zero_grad()
-        loss.backward()
-        # Update weights - SGD (Stochastic Gradient Descent)
-        for param in model.parameters():
-            param.data -= lr * param.grad
-        
-    if i % 1000 == 0:
-        print(f'Iteration {i}, Loss: {loss.data}')
-
-correct = 0
-for input_vec, target in zip(X_test, y_test):
-    output = Value.softmax(model([Value(x) for x in input_vec]))
-    predicted = max(range(len(output)), key=lambda i: output[i].data)
-    if predicted == target:
-        correct += 1
-accuracy = correct / len(X_test)
-print(f"Accuracy: {accuracy:.4f}")
+train(model, X_train, y_train, iterations, lr, grad_accumulations)
+evaluate(model, X_test, y_test)
